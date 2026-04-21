@@ -4,14 +4,15 @@ ServerConfig:
   workers: 4
   timeout: 300
 
-# 数据库配置
-DbConfig:
+# 数据库配置 (参考 split/config/env_dev.yaml)
+db_config:
   type: mysql
-  host: localhost
-  port: 3306
-  user: root
-  password: ""
-  database: dividend_audit
+  mysql:
+    host: 10.50.161.14
+    port: 3306
+    user: jzai_base
+    password: jzai@2022Ctie
+    db_name: jzai_basedb
 
 # LLM配置
 LlmConfig:
@@ -52,7 +53,7 @@ DividendAuditConfig:
     - 派发
 
 # 加解密配置
-EncryptionConfig:
+EncryptionDecryptionKey:
   secret_key: "1234567890123456"
   iv: "1234567890123456"
 

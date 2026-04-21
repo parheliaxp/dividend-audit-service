@@ -1,13 +1,12 @@
-from docx import Document
-from io import BytesIO
 import requests
 from app.logger import logger
 from app.config import cfg
-from modules.common.s3_client import s3_client
-from modules.common.db_client import exec_query_df
+from modules.common.db_client import exec_query_df, exec_query_raw
+from modules.common.encryption import AESCipher
 from .text_condenser import TextCondenser
 from .llm_auditor import DividendAuditor
 from .db_writer import DividendDBWriter
+
 
 class DividendProcessor:
     """分红审核处理器"""
@@ -16,6 +15,11 @@ class DividendProcessor:
         self.condenser = TextCondenser()
         self.auditor = DividendAuditor()
         self.db_writer = DividendDBWriter()
+        # 使用配置中的密钥
+        self._cipher = AESCipher(
+            cfg.EncryptionDecryptionKey['secret_key'],
+            cfg.EncryptionDecryptionKey['iv']
+        )
 
     def process(self, args):
         """
@@ -24,53 +28,41 @@ class DividendProcessor:
         Args:
             args: 请求参数
                 - doc_id: 文档ID
-                - encrypt_flag: 是否加密
                 - callback_url: 回调URL
 
         Returns:
             list: 审核结果列表
         """
         doc_id = args.get("doc_id")
-        encrypt_flag = args.get("encrypt_flag", True)
         callback_url = args.get("callback_url")
 
         logger.info("开始处理 doc_id: {}".format(doc_id))
 
-        # Step 1: 获取文档URL
-        doc_url = self._get_doc_url(doc_id)
-        if not doc_url:
-            return self._error_result("文档不存在", doc_id)
+        # Step 1: 从数据库获取文档chunk
+        chunks = self._get_chunks(doc_id)
+        if not chunks:
+            return self._error_result("文档不存在或内容为空", doc_id)
 
-        # Step 2: 获取文档内容
-        try:
-            doc_content = s3_client.get_file_content(doc_url, encrypt_flag)
-        except Exception as e:
-            return self._error_result("获取文档内容失败: {}".format(str(e)), doc_id)
+        logger.info("doc_id: {} 获取chunk数: {}".format(doc_id, len(chunks)))
 
-        # Step 3: 解析DOCX
-        paragraphs = self._parse_docx(doc_content)
-        if not paragraphs:
-            return self._error_result("文档解析失败或内容为空", doc_id)
+        # Step 2: 文本浓缩 (筛选分红相关内容)
+        dividend_chunks = self.condenser.filter_dividend_chunks(chunks)
+        if not dividend_chunks:
+            logger.info("doc_id: {} 未找到分红相关内容".format(doc_id))
+            return []  # 未找到分红相关内容，返回空结果
 
-        logger.info("doc_id: {} 解析出段落数: {}".format(doc_id, len(paragraphs)))
+        logger.info("doc_id: {} 筛选分红chunk数: {}".format(doc_id, len(dividend_chunks)))
 
-        # Step 4: 文本浓缩
-        condensed_text = self.condenser.condense(paragraphs)
-        if not condensed_text:
-            return self._error_result("未找到分红相关内容", doc_id)
+        # Step 3: LLM审核
+        audit_result = self.auditor.audit(dividend_chunks, doc_id)
 
-        logger.info("doc_id: {}, 浓缩后长度: {}".format(doc_id, len(condensed_text)))
-
-        # Step 5: LLM审核
-        audit_result = self.auditor.audit(condensed_text, doc_id)
-
-        # Step 6: 结果入库
+        # Step 4: 结果入库
         try:
             self.db_writer.save(doc_id, audit_result)
         except Exception as e:
             logger.error("结果入库失败: {}".format(e))
 
-        # Step 7: 回调通知
+        # Step 5: 回调通知
         if callback_url:
             self._callback(callback_url, doc_id, audit_result)
 
@@ -78,60 +70,79 @@ class DividendProcessor:
 
         return audit_result
 
-    def _get_doc_url(self, doc_id):
-        """从数据库获取文档URL"""
+    def _is_encoded(self, doc_id):
+        """
+        查询文档是否加密 (参考 split/consistency_process/consistency_sql_reader.py)
+
+        Args:
+            doc_id: 文档ID
+
+        Returns:
+            bool: 是否加密
+        """
+        sql = "SELECT encrypt FROM ib_analysis_document WHERE doc_id = {}".format(doc_id)
+        try:
+            result = exec_query_raw(sql)
+            if not result or len(result) == 0:
+                return False
+            return True if int(result[0][0]) == 1 else False
+        except Exception as e:
+            logger.warning("doc_id: {} 查询加密状态失败: {}".format(doc_id, e))
+            return False
+
+    def _get_chunks(self, doc_id):
+        """
+        从数据库获取文档chunk (参考 split/consistency_process/consistency_sql_reader.py)
+
+        Args:
+            doc_id: 文档ID
+
+        Returns:
+            list: chunk列表 [{'id', 'paraid', 'chunkid', 'text', 'flag', 'title', 'metadata'}, ...]
+        """
+        # 查询是否加密
+        is_encrypted = self._is_encoded(doc_id)
+
+        # 查询chunk数据
         sql = """
-            SELECT url FROM analysis_doc_chunk_info_ib
-            WHERE doc_id = {} LIMIT 1
+            SELECT id, paraid, chunkid, text, flag, title, metadata
+            FROM analysis_doc_chunk_info_ib
+            WHERE doc_id = {} AND audit_type = 2
+            ORDER BY id
         """.format(doc_id)
 
         try:
             df = exec_query_df(sql)
             if df.empty:
-                logger.error("doc_id: {} 未找到文档URL".format(doc_id))
-                return None
-            return df.values[0][0]
-        except Exception as e:
-            logger.error("查询文档URL失败: {}".format(e))
-            return None
+                logger.warning("doc_id: {} 未找到chunk数据".format(doc_id))
+                return []
 
-    def _parse_docx(self, doc_content):
-        """解析DOCX文件"""
-        try:
-            doc = Document(doc_content)
-        except Exception as e:
-            logger.error("打开DOCX文件失败: {}".format(e))
-            return []
+            chunks = []
+            for _, row in df.iterrows():
+                text = row['text']
 
-        paragraphs = []
+                # 根据加密状态决定是否解密
+                if is_encrypted:
+                    try:
+                        text = self._cipher.decrypt_text(text)
+                    except Exception as e:
+                        logger.warning("chunk id={} 解密失败: {}".format(row['id'], e))
 
-        # 提取段落
-        for para in doc.paragraphs:
-            text = para.text.strip()
-            if text:
-                paragraphs.append({
+                chunks.append({
+                    'id': row['id'],
+                    'paraid': row['paraid'] if 'paraid' in row else '',
+                    'chunkid': row['chunkid'] if 'chunkid' in row else '',
                     'text': text,
-                    'style': para.style.name if para.style else None
+                    'flag': row['flag'] if 'flag' in row else '',
+                    'title': row['title'] if 'title' in row else '',
+                    'metadata': row['metadata'] if 'metadata' in row else ''
                 })
 
-        # 提取表格
-        for table in doc.tables:
-            table_text = self._extract_table(table)
-            if table_text:
-                paragraphs.append({
-                    'text': table_text,
-                    'style': 'table'
-                })
+            return chunks
 
-        return paragraphs
-
-    def _extract_table(self, table):
-        """提取表格内容"""
-        rows = []
-        for row in table.rows:
-            cells = [cell.text.strip() for cell in row.cells]
-            rows.append(" | ".join(cells))
-        return "\n".join(rows)
+        except Exception as e:
+            logger.error("查询chunk失败: {}".format(e))
+            return []
 
     def _callback(self, url, doc_id, result):
         """回调通知"""

@@ -7,3 +7,5 @@ pandas==2.0.0
 requests==2.31.0
 python-docx==0.8.11
 pycryptodome==3.19.0
+sqlalchemy==2.0.0
+retry==0.9.3
