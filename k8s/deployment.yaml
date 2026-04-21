@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dividend-audit-service
+  namespace: default
+  labels:
+    app: dividend-audit
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: dividend-audit
+  template:
+    metadata:
+      labels:
+        app: dividend-audit
+        version: v1
+    spec:
+      containers:
+      - name: dividend-audit
+        image: your-registry/dividend-audit-service:1.0.0
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 6768
+          protocol: TCP
+        env:
+        - name: ENV
+          value: "prd"
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: dividend-audit-secret
+              key: db-password
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 6768
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 6768
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config
+          readOnly: true
+      volumes:
+      - name: config-volume
+        configMap:
+          name: dividend-audit-config
+      imagePullSecrets:
+      - name: registry-secret

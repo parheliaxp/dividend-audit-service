@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dividend-audit-config
+  namespace: default
+data:
+  config.yaml: |
+    ServerConfig:
+      port: 6768
+      workers: 4
+      timeout: 300
+
+    DbConfig:
+      type: mysql
+      host: "mysql-service"
+      port: 3306
+      user: "app_user"
+      database: "dividend_audit"
+
+    LlmConfig:
+      deepseek:
+        url: "http://deepseek-service:31088/v1/chat/completions"
+        model: "deepseek-r1-distill-qwen-32b"
+        max_tokens: 4096
+        timeout: 60
+      qianwen:
+        url: "http://qwen-service:30080/v1/chat/completions"
+        model: "qwen-72b"
+        max_tokens: 2048
+        timeout: 30
+
+    DividendAuditConfig:
+      enabled: true
+      max_text_length: 8000
+      max_retries: 3
+      callback_timeout: 30
+
+    EncryptionConfig:
+      secret_key: "1234567890123456"
+      iv: "1234567890123456"
+
+    ExternalServices:
+      split_service_url: "http://split-service:6767"
+
+  env_prd.yaml: |
+    DbConfig:
+      host: "mysql-service"
+      port: 3306
+      user: "app_user"
+      database: "dividend_audit"
+
+    LlmConfig:
+      deepseek:
+        url: "http://deepseek-service:31088/v1/chat/completions"
+      qianwen:
+        url: "http://qwen-service:30080/v1/chat/completions"
+
+    ExternalServices:
+      split_service_url: "http://split-service:6767"

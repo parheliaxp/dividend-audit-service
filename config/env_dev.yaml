@@ -1,0 +1,17 @@
+# 开发环境配置
+
+DbConfig:
+  host: "localhost"
+  port: 3306
+  user: "root"
+  password: "password"
+  database: "dividend_audit_dev"
+
+LlmConfig:
+  deepseek:
+    url: "http://deepseek-dev.internal:31088/v1/chat/completions"
+  qianwen:
+    url: "http://qwen-dev.internal:30080/v1/chat/completions"
+
+ExternalServices:
+  split_service_url: "http://localhost:6767"

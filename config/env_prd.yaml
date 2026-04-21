@@ -1,0 +1,17 @@
+# 生产环境配置
+
+DbConfig:
+  host: "mysql-service"
+  port: 3306
+  user: "app_user"
+  password: "${DB_PASSWORD}"
+  database: "dividend_audit"
+
+LlmConfig:
+  deepseek:
+    url: "http://deepseek-service:31088/v1/chat/completions"
+  qianwen:
+    url: "http://qwen-service:30080/v1/chat/completions"
+
+ExternalServices:
+  split_service_url: "http://split-service:6767"

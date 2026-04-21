@@ -1,0 +1,61 @@
+# 服务配置
+ServerConfig:
+  port: 6768
+  workers: 4
+  timeout: 300
+
+# 数据库配置
+DbConfig:
+  type: mysql
+  host: localhost
+  port: 3306
+  user: root
+  password: ""
+  database: dividend_audit
+
+# LLM配置
+LlmConfig:
+  deepseek:
+    url: ""
+    model: "deepseek-r1-distill-qwen-32b"
+    max_tokens: 4096
+    timeout: 60
+  qianwen:
+    url: ""
+    model: "qwen-72b"
+    max_tokens: 2048
+    timeout: 30
+
+# 分红审核配置
+DividendAuditConfig:
+  enabled: true
+  max_text_length: 8000
+  max_retries: 3
+  callback_timeout: 30
+  keywords:
+    - 分红
+    - 股息
+    - 派息
+    - 现金分红
+    - 股票股利
+    - 每股收益
+    - 每股股利
+    - 分红比例
+    - 分红方案
+    - 利润分配
+    - 股利支付
+    - 分红金额
+    - 分红总额
+    - 股权登记日
+    - 除权除息日
+    - 红利
+    - 派发
+
+# 加解密配置
+EncryptionConfig:
+  secret_key: "1234567890123456"
+  iv: "1234567890123456"
+
+# 外部服务配置
+ExternalServices:
+  split_service_url: "http://split-service:6767"
