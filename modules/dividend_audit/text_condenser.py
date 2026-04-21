@@ -52,30 +52,30 @@ class TextCondenser:
 
     def filter_dividend_chunks(self, chunks):
         """
-        筛选分红相关的chunk
+        筛选分红相关chunk的text
 
         Args:
             chunks: chunk列表 [{'id': int, 'paraid': str, 'text': str, 'metadata': str}, ...]
 
         Returns:
-            list: 分红相关的chunk
+            list: 分红相关的text列表
         """
-        dividend_chunks = []
+        dividend_texts = []
 
         for chunk in chunks:
             text = chunk.get('text', '')
 
             # 检查是否包含分红关键词
             if self._contains_dividend_keywords(text):
-                dividend_chunks.append(chunk)
+                dividend_texts.append(text)
                 continue
 
             # 检查是否包含财务数据模式
             if self._contains_financial_data(text):
-                dividend_chunks.append(chunk)
+                dividend_texts.append(text)
 
-        logger.info("筛选分红chunk: {} / {}".format(len(dividend_chunks), len(chunks)))
-        return dividend_chunks
+        logger.info("筛选分红chunk: {} / {}".format(len(dividend_texts), len(chunks)))
+        return dividend_texts
 
     def _contains_dividend_keywords(self, text):
         """检查文本是否包含分红关键词"""
@@ -109,26 +109,23 @@ class TextCondenser:
         Returns:
             str: 浓缩后的文本
         """
-        # Step 1: 筛选分红相关chunk
-        dividend_chunks = self.filter_dividend_chunks(chunks)
+        # Step 1: 筛选分红相关text
+        dividend_texts = self.filter_dividend_chunks(chunks)
 
-        # Step 2: 提取文本
-        texts = []
-        for chunk in dividend_chunks:
-            text = chunk.get('text', '')
-            # 清洗无关内容
+        # Step 2: 清洗文本
+        cleaned_texts = []
+        for text in dividend_texts:
             text = self._clean_content(text)
             if text:
-                texts.append(text)
+                cleaned_texts.append(text)
 
         # Step 3: 合并并截断
-        condensed_text = self._merge_and_truncate(texts)
+        condensed_text = self._merge_and_truncate(cleaned_texts)
 
         return condensed_text
 
     def _clean_content(self, text):
         """清洗无关内容"""
-        # 移除匹配排除模式的内容
         for pattern in self.EXCLUDE_PATTERNS:
             text = re.sub(pattern, '', text)
 
