@@ -45,27 +45,24 @@ class DividendProcessor:
 
         logger.info("doc_id: {} 获取chunk数: {}".format(doc_id, len(chunks)))
 
-        # Step 2: 文本浓缩 (筛选分红相关内容，只保留text)
-        dividend_texts = self.condenser.filter_dividend_chunks(chunks)
-        if not dividend_texts:
+        # Step 2: 文本浓缩 (筛选包含分红关键词的段落)
+        condensed_text = self.condenser.condense(chunks)
+        if not condensed_text:
             logger.info("doc_id: {} 未找到分红相关内容".format(doc_id))
-            return []  # 未找到分红相关内容，返回空结果
+            return []
 
-        logger.info("doc_id: {} 筛选分红chunk数: {}".format(doc_id, len(dividend_texts)))
+        logger.info("doc_id: {} 浓缩后文本长度: {}".format(doc_id, len(condensed_text)))
 
-        # Step 3: 合并文本并截断
-        condensed_text = self.condenser._merge_and_truncate(dividend_texts)
-
-        # Step 4: LLM审核
+        # Step 3: LLM审核
         audit_result = self.auditor.audit(condensed_text, doc_id)
 
-        # Step 5: 结果入库
+        # Step 4: 结果入库
         try:
             self.db_writer.save(doc_id, audit_result)
         except Exception as e:
             logger.error("结果入库失败: {}".format(e))
 
-        # Step 6: 回调通知
+        # Step 5: 回调通知
         if callback_url:
             self._callback(callback_url, doc_id, audit_result)
 

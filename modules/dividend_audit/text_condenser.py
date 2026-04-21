@@ -52,30 +52,40 @@ class TextCondenser:
 
     def filter_dividend_chunks(self, chunks):
         """
-        筛选分红相关chunk的text
+        筛选分红相关chunk，提取包含关键词的段落 (参考 ex.py)
 
         Args:
-            chunks: chunk列表 [{'id': int, 'paraid': str, 'text': str, 'metadata': str}, ...]
+            chunks: chunk列表 [{'id': int, 'paraid': str, 'text': str, ...}, ...]
 
         Returns:
-            list: 分红相关的text列表
+            str: 格式化的文本，格式为 "[chunk_xxx] 文本内容"
         """
-        dividend_texts = []
+        lines = []
+        found_sections = set()
 
         for chunk in chunks:
             text = chunk.get('text', '')
-
-            # 检查是否包含分红关键词
-            if self._contains_dividend_keywords(text):
-                dividend_texts.append(text)
+            if not text:
                 continue
 
-            # 检查是否包含财务数据模式
-            if self._contains_financial_data(text):
-                dividend_texts.append(text)
+            # 检查是否包含关键词
+            is_relevant = False
+            for category, kws in self.KEYWORDS.items():
+                for kw in kws:
+                    if kw in text:
+                        is_relevant = True
+                        break
+                if is_relevant:
+                    break
 
-        logger.info("筛选分红chunk: {} / {}".format(len(dividend_texts), len(chunks)))
-        return dividend_texts
+            # 保留包含关键词且不重复的段落
+            if is_relevant and text not in found_sections:
+                chunk_id = chunk.get('id', 0)
+                lines.append(f"[chunk_{chunk_id}] {text}")
+                found_sections.add(text)
+
+        logger.info("筛选分红chunk: {} / {}".format(len(lines), len(chunks)))
+        return "\n".join(lines)
 
     def _contains_dividend_keywords(self, text):
         """检查文本是否包含分红关键词"""
@@ -109,20 +119,15 @@ class TextCondenser:
         Returns:
             str: 浓缩后的文本
         """
-        # Step 1: 筛选分红相关text
-        dividend_texts = self.filter_dividend_chunks(chunks)
+        # 筛选并格式化
+        condensed = self.filter_dividend_chunks(chunks)
 
-        # Step 2: 清洗文本
-        cleaned_texts = []
-        for text in dividend_texts:
-            text = self._clean_content(text)
-            if text:
-                cleaned_texts.append(text)
+        # 截断
+        if len(condensed) > self.max_length:
+            condensed = condensed[:self.max_length]
+            logger.warning("文本已截断到 {} 字符".format(self.max_length))
 
-        # Step 3: 合并并截断
-        condensed_text = self._merge_and_truncate(cleaned_texts)
-
-        return condensed_text
+        return condensed
 
     def _clean_content(self, text):
         """清洗无关内容"""
@@ -134,17 +139,16 @@ class TextCondenser:
 
     def _merge_and_truncate(self, texts):
         """合并文本并截断到最大长度"""
-        merged = "\n\n".join(texts)
+        if isinstance(texts, str):
+            merged = texts
+        else:
+            merged = "\n".join(texts)
 
         if len(merged) > self.max_length:
             merged = merged[:self.max_length]
             logger.warning("文本已截断到 {} 字符".format(self.max_length))
 
         return merged
-
-    def get_chunk_ids(self, chunks):
-        """获取chunk ID列表"""
-        return [chunk.get('id') for chunk in chunks]
 
     # ============================================================
     # DOCX文档解析方法 (参考 adp_py/ex.py)
@@ -197,32 +201,6 @@ class TextCondenser:
             if relevant_rows:
                 lines.append(f"\n[表格 {t_idx}]")
                 lines.extend(relevant_rows)
-
-        return "\n".join(lines)
-
-    def extract_relevant_content_from_chunks(self, chunks: list) -> str:
-        """从数据库chunk中提取与分红、净利润相关的财务信息"""
-        lines = []
-        found_sections = set()
-
-        for chunk in chunks:
-            text = chunk.get('text', '')
-            if not text:
-                continue
-
-            # 检查是否包含关键词
-            is_relevant = False
-            for category, kws in self.KEYWORDS.items():
-                for kw in kws:
-                    if kw in text:
-                        is_relevant = True
-                        break
-                if is_relevant:
-                    break
-
-            if is_relevant and text not in found_sections:
-                lines.append(f"[chunk_{chunk.get('id')}] {text}")
-                found_sections.add(text)
 
         return "\n".join(lines)
 
