@@ -1,50 +1,38 @@
-from Crypto.Cipher import AES
-from Crypto.Util.Padding import pad, unpad
-from io import BytesIO
-import requests
-from app.logger import logger
+from base64 import b64decode, b64encode
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.backends import default_backend
 from app.config import cfg
 
 
 class AESCipher:
-    """AES加解密工具 (参考 split/consistency_process/encryption_decryption.py)"""
+    """AES加解密工具"""
 
-    def __init__(self, key=None, iv=None):
+    def __init__(self, key=None):
         """
         初始化
 
         Args:
             key: 密钥 (16字节), 默认从配置读取
-            iv: 初始向量 (16字节), 默认从配置读取
         """
         if key is None:
             key = cfg.EncryptionDecryptionKey['secret_key']
-        if iv is None:
-            iv = cfg.EncryptionDecryptionKey['iv']
-
         if isinstance(key, str):
             key = key.encode()
-        if isinstance(iv, str):
-            iv = iv.encode()
-
         self.key = key
-        self.iv = iv
 
     def encrypt_text(self, plain_text):
-        """
-        加密文本
+        """加密文本"""
+        from os import urandom
+        iv = urandom(16)
+        cipher = Cipher(algorithms.AES(self.key), modes.CBC(iv), backend=default_backend())
+        encryptor = cipher.encryptor()
 
-        Args:
-            plain_text: 明文
+        padder = padding.PKCS7(algorithms.AES.block_size).padder()
+        padded_data = padder.update(plain_text.encode('utf-8')) + padder.finalize()
 
-        Returns:
-            str: Base64编码的密文
-        """
-        import base64
-        cipher = AES.new(self.key, AES.MODE_CBC, self.iv)
-        padded_text = pad(plain_text.encode('utf-8'), AES.block_size)
-        encrypted = cipher.encrypt(padded_text)
-        return base64.b64encode(self.iv + encrypted).decode('utf-8')
+        encrypted_bytes = encryptor.update(padded_data) + encryptor.finalize()
+        return b64encode(iv + encrypted_bytes).decode('utf-8')
 
     def decrypt_text(self, encrypted_text):
         """
@@ -56,44 +44,19 @@ class AESCipher:
         Returns:
             str: 明文
         """
-        import base64
-        encrypted_bytes = base64.b64decode(encrypted_text)
-        # 提取IV (前16字节)
-        iv = encrypted_bytes[:AES.block_size]
-        cipher = AES.new(self.key, AES.MODE_CBC, iv)
-        decrypted = unpad(cipher.decrypt(encrypted_bytes[AES.block_size:]), AES.block_size)
-        return decrypted.decode('utf-8')
+        decoded_data = b64decode(encrypted_text)
+        iv = decoded_data[:16]
+        encrypted_data = decoded_data[16:]
 
-    def decrypt_s3_content(self, s3_url):
-        """
-        解密S3内容
+        cipher = Cipher(algorithms.AES(self.key), modes.CBC(iv), backend=default_backend())
+        decryptor = cipher.decryptor()
 
-        Args:
-            s3_url: S3文件URL
+        decrypted_padded = decryptor.update(encrypted_data) + decryptor.finalize()
 
-        Returns:
-            BytesIO: 解密后的内容流
-        """
-        try:
-            response = requests.get(
-                s3_url,
-                proxies={'https': '', 'http': ''},
-                verify=False,
-                timeout=60
-            )
-            response.raise_for_status()
-            encrypted_content = response.content
+        unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
+        decrypted_data = unpadder.update(decrypted_padded) + unpadder.finalize()
 
-            # 提取IV (前16字节)
-            iv = encrypted_content[:AES.block_size]
-            cipher = AES.new(self.key, AES.MODE_CBC, iv)
-            decrypted = unpad(cipher.decrypt(encrypted_content[AES.block_size:]), AES.block_size)
-
-            return BytesIO(decrypted)
-
-        except Exception as e:
-            logger.error("解密S3内容失败: {}".format(e))
-            raise
+        return decrypted_data.decode('utf-8')
 
 
 # 全局便捷函数

@@ -2,7 +2,8 @@ import json
 from datetime import datetime
 from app.logger import logger
 from app.config import cfg
-from modules.common.db_client import exec_sql
+from modules.common.db_client import exec_sql, exec_query_df
+
 
 class DividendDBWriter:
     """分红审核结果数据库写入器"""
@@ -21,10 +22,8 @@ class DividendDBWriter:
             audit_result: 审核结果列表
         """
         try:
-            # 检查表是否存在
             self._ensure_table_exists()
 
-            # 转义JSON中的单引号
             result_json = json.dumps(audit_result, ensure_ascii=False).replace("'", "''")
             create_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             status = 1 if audit_result else 0
@@ -42,39 +41,28 @@ class DividendDBWriter:
             raise
 
     def _ensure_table_exists(self):
-        """确保表存在"""
+        """确保表存在 (Vastbase/PostgreSQL语法)"""
         create_sql = """
             CREATE TABLE IF NOT EXISTS {} (
-                id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
-                doc_id BIGINT NOT NULL COMMENT '文档ID',
-                status INT DEFAULT 0 COMMENT '审核状态: 0=无问题, 1=有问题',
-                audit_result TEXT COMMENT '审核结果JSON',
-                create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-                update_time DATETIME ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-                env VARCHAR(50) COMMENT '环境标识',
-                INDEX idx_doc_id (doc_id),
-                INDEX idx_create_time (create_time),
-                INDEX idx_status (status)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分红数据审核结果表'
+                id BIGSERIAL PRIMARY KEY,
+                doc_id BIGINT NOT NULL,
+                status INT DEFAULT 0,
+                audit_result TEXT,
+                create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                env VARCHAR(50)
+            )
         """.format(self.TABLE_NAME)
 
         try:
             exec_sql(create_sql)
+            # 创建索引
+            exec_sql("CREATE INDEX IF NOT EXISTS idx_{}_doc_id ON {} (doc_id)".format(self.TABLE_NAME, self.TABLE_NAME))
         except Exception as e:
             logger.warning("创建表失败(可能已存在): {}".format(e))
 
     def get_result(self, doc_id):
-        """
-        获取审核结果
-
-        Args:
-            doc_id: 文档ID
-
-        Returns:
-            dict: 审核结果
-        """
-        from modules.common.db_client import exec_query_df
-
+        """获取审核结果"""
         sql = """
             SELECT * FROM {} WHERE doc_id = {} ORDER BY create_time DESC LIMIT 1
         """.format(self.TABLE_NAME, doc_id)
@@ -96,6 +84,7 @@ class DividendDBWriter:
         except Exception as e:
             logger.error("获取审核结果失败: {}".format(e))
             return None
+
 
 # 全局实例
 db_writer = DividendDBWriter()

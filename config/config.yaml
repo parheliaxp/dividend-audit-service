@@ -4,14 +4,15 @@ ServerConfig:
   workers: 4
   timeout: 300
 
-# 数据库配置 (参考 split/config/env_dev.yaml)
+# 数据库配置 (仅支持vastbase)
+# 参考: /Users/gordangao/zhiyue/split/config/env_dev.yaml
 db_config:
-  type: mysql
-  mysql:
-    host: 10.50.161.14
-    port: 3306
-    user: jzai_base
-    password: jzai@2022Ctie
+  type: vastbase
+  vastbase:
+    host: 10.110.30.54
+    port: 8083
+    user: postgres
+    password: Vastbase@123
     db_name: jzai_basedb
 
 # LLM配置
@@ -33,30 +34,9 @@ DividendAuditConfig:
   max_text_length: 8000
   max_retries: 3
   callback_timeout: 30
-  keywords:
-    - 分红
-    - 股息
-    - 派息
-    - 现金分红
-    - 股票股利
-    - 每股收益
-    - 每股股利
-    - 分红比例
-    - 分红方案
-    - 利润分配
-    - 股利支付
-    - 分红金额
-    - 分红总额
-    - 股权登记日
-    - 除权除息日
-    - 红利
-    - 派发
 
 # 加解密配置
+# 参考: /Users/gordangao/zhiyue/split/config/env_dev.yaml
 EncryptionDecryptionKey:
   secret_key: "1234567890123456"
   iv: "1234567890123456"
-
-# 外部服务配置
-ExternalServices:
-  split_service_url: "http://split-service:6767"

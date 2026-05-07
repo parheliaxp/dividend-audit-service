@@ -27,6 +27,13 @@ def create_app():
         dividend_audit,
         methods=['GET', 'POST']
     )
+    # Analysis Java 端实际调用的路由
+    flask_app.add_url_rule(
+        '/dividend_audit/process',
+        'dividend_audit_process',
+        dividend_audit,
+        methods=['POST']
+    )
 
     return flask_app
 
